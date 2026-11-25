@@ -38,6 +38,7 @@ until the pinned count is updated, so a silent drift in length can never
 reach the output file.
 """
 import os
+import sys
 
 LINE = "I told the CFO to turn it off and on again, so he unplugged the whole office, and my ticket got closed as 'resolved' with five stars."
 
@@ -82,11 +83,25 @@ def write_entry(out_dir):
 
 def main():
     n = check()
-    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
+    # An explicitly set but empty/whitespace-only MAKEFUN_OUTPUT_DIR is a
+    # misconfiguration, not a directory: os.makedirs("") raises FileNotFoundError
+    # and used to silently fall through to the repo-local fallback below,
+    # hiding the bad config. Treat it as unset so the documented default
+    # (/output) applies instead.
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "").strip() or "/output"
     try:
         path = write_entry(out_dir)
-    except OSError:
+    except OSError as exc:
         fallback = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+        # The fallback used to happen silently, so a run could look
+        # successful while the entry landed somewhere the caller never
+        # expected. Say so loudly on stderr; the exit code still signals
+        # success only if the fallback write itself worked.
+        print(
+            f"warning: cannot write to {out_dir!r} ({exc}); "
+            f"falling back to {fallback}",
+            file=sys.stderr,
+        )
         path = write_entry(fallback)
     print(f"wrote {n} chars (limit {LIMIT}) to {path}")
     print(LINE)
